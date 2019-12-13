@@ -24,7 +24,7 @@ static uint8_t is_serial_master = 0;
 #define ExtModePort(pin) (((uint32_t)PAL_PORT(pin) & 0x0000FF00U) >> 6)
 
 // Serial pulse period in microseconds. Its probably a bad idea to lower this value.
-#define SERIAL_DELAY 24
+#define SERIAL_DELAY 20
 
 //11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
 
@@ -133,7 +133,7 @@ void interrupt_handler(EXTDriver *extp, expchannel_t channel) {
 
     uint8_t checksum_computed = 0;
     int sstd_index = serial_read_byte();
-    sstd_index=0;
+    //sstd_index=0;
     sync_send();
 
     SSTD_t *trans = &Transaction_table[sstd_index];
@@ -171,8 +171,14 @@ serial_delay_half();
     // wait for the sync to finish sending
     serial_delay();
 
+    *trans->status = TRANSACTION_ACCEPTED;
+
     // end transaction
     serial_input();
+
+    // TODO: remove extra delay between transactions
+    serial_delay();
+    serial_delay();
 
     extChannelEnableI(&EXTD1, PAL_PAD(SOFT_SERIAL_PIN));
     chSysUnlockFromISR();
@@ -248,7 +254,6 @@ int soft_serial_transaction(int sstd_index) {
     for (int i = 0; i < trans->target2initiator_buffer_size; ++i) {
         trans->target2initiator_buffer[i] = serial_read_byte();
         sync_recv();
-        //dprintf("serial::data[%08b]\n", Transaction_table->target2initiator_buffer[i]);
         checksum_computed += trans->target2initiator_buffer[i];
     }
     checksum_computed ^= 7;
@@ -259,9 +264,13 @@ int soft_serial_transaction(int sstd_index) {
     serial_delay();
 
     if ((checksum_computed) != (checksum_received)) {
-        uint8_t temp = 0;
-        dprintf("serial::FAIL[%u,%u,%u]\n", checksum_computed, checksum_received, temp);
-
+        dprintf("serial::FAIL[%u,%u,%u]\n", checksum_computed, checksum_received, sstd_index);
+        if(sstd_index == 1)
+        {
+            for (int i = 0; i < trans->target2initiator_buffer_size; ++i) {
+                dprintf("serial::data[%08b]\n", trans->target2initiator_buffer[0]);
+            }
+        }
         serial_output();
         serial_high();
 

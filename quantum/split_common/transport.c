@@ -156,6 +156,7 @@ enum serial_transaction_id {
 #    endif
 };
 
+uint8_t dummy =0;
 SSTD_t transactions[] = {
     [GET_SLAVE_MATRIX] =
         {
@@ -168,7 +169,7 @@ SSTD_t transactions[] = {
 #    if defined(RGBLIGHT_ENABLE) && defined(RGBLIGHT_SPLIT)
     [PUT_RGBLIGHT] =
         {
-            (uint8_t *)&status_rgblight, sizeof(serial_rgblight), (uint8_t *)&serial_rgblight, 0, NULL  // no slave to master transfer
+            (uint8_t *)&status_rgblight, sizeof(serial_rgblight), (uint8_t *)&serial_rgblight, sizeof(dummy), &dummy  // no slave to master transfer
         },
 #    endif
 };
@@ -208,7 +209,8 @@ bool transport_master(matrix_row_t matrix[]) {
         return false;
     }
 #    else
-    transport_rgblight_master();
+    // TODO: work out why this causes crash
+    // transport_rgblight_master();
     if (soft_serial_transaction(GET_SLAVE_MATRIX) != TRANSACTION_END) {
         return false;
     }
