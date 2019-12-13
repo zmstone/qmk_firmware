@@ -129,35 +129,40 @@ void interrupt_handler(EXTDriver *extp, expchannel_t channel) {
     sync_send();
 
     serial_delay_half();//read mid pulses
+    serial_delay_blip();
 
-    //uint8_t checksum_computed = 0;
-    serial_read_byte();
+    uint8_t checksum_computed = 0;
+    int sstd_index = serial_read_byte();
+    sstd_index=0;
     sync_send();
-    // for (int i = 0; i < Transaction_table->target2initiator_buffer_size; ++i) {
-    //     Transaction_table->target2initiator_buffer[i] = serial_read_byte();
-    //     sync_send();
-    //     checksum_computed += Transaction_table->target2initiator_buffer[i];
-    // }
-    // uint8_t checksum_received = serial_read_byte();
-    //(void)checksum_received;
-        serial_read_byte();
+
+    SSTD_t *trans = &Transaction_table[sstd_index];
+    for (int i = 0; i < trans->initiator2target_buffer_size; ++i) {
+        trans->initiator2target_buffer[i] = serial_read_byte();
         sync_send();
-        serial_read_byte();
-        sync_send();
+        checksum_computed += trans->initiator2target_buffer[i];
+    }
+    uint8_t checksum_received = serial_read_byte();
+    sync_send();
+    (void)checksum_received;
+        // serial_read_byte();
+        // sync_send();
+        // serial_read_byte();
+        // sync_send();
 
     // wait for the sync to finish sending
     serial_delay();
 
     uint8_t checksum = 0;
-    serial_write_byte(0b10101010);
-    sync_send();
-serial_delay_half();
-    for (int i = 0; i < Transaction_table->target2initiator_buffer_size; ++i) {
-        serial_write_byte(Transaction_table->target2initiator_buffer[i]);
+    //serial_write_byte(0b10101010);
+    //sync_send();
+//serial_delay_half();
+    for (int i = 0; i < trans->target2initiator_buffer_size; ++i) {
+        serial_write_byte(trans->target2initiator_buffer[i]);
         //serial_write_byte(0b10101010);
         sync_send();
 serial_delay_half();
-        checksum += Transaction_table->target2initiator_buffer[i];
+        checksum += trans->target2initiator_buffer[i];
     }
     serial_write_byte(checksum ^ 7);
     //serial_write_byte(0b10101010);
@@ -185,10 +190,13 @@ serial_delay_half();
 // this code is very time dependent, so we need to disable interrupts
 #ifndef SERIAL_USE_MULTI_TRANSACTION
 int soft_serial_transaction(void) {
+    int sstd_index = 0;
 #else
 int soft_serial_transaction(int sstd_index) {
-    (void)sstd_index;
 #endif
+
+    if (sstd_index > Transaction_table_size) return TRANSACTION_TYPE_ERROR;
+    SSTD_t *trans = &Transaction_table[sstd_index];
 
     // TODO: remove extra delay between transactions
     serial_delay();
@@ -219,37 +227,29 @@ int soft_serial_transaction(int sstd_index) {
     // if the slave is present syncronize with it
     //sync_recv();
 
-    //uint8_t checksum = 0;
+    uint8_t checksum = 0;
     // send data to the slave
-    serial_write_byte(0b10101010);//fake send id
+    serial_write_byte(sstd_index);//fake send id
     sync_recv();
-        serial_write_byte(0b10101010);//fake data
+    for (int i = 0; i < trans->initiator2target_buffer_size; ++i) {
+        serial_write_byte(trans->initiator2target_buffer[i]);
         sync_recv();
-        serial_write_byte(0b10101010);//fake data
-        sync_recv();
-    // for (int i = 0; i < Transaction_table->target2initiator_buffer_size; ++i) {
-    //     serial_write_byte(Transaction_table->target2initiator_buffer[i]);
-    //     sync_recv();
-    //     checksum += Transaction_table->target2initiator_buffer[i];
-    // }
-    // serial_write_byte(checksum);
-    //serial_delay();
-    //wait_us(8);
-    //sync_recv();
+        checksum += trans->initiator2target_buffer[i];
+    }
+    serial_write_byte(checksum);
+    sync_recv();
 
-    serial_delay();
-    serial_delay();//read mid pulses
-    //serial_delay_half();
+    serial_delay();serial_delay();//read mid pulses
 
     uint8_t checksum_computed = 0;
     // receive data from the slave
-    uint8_t temp = serial_read_byte();
-    sync_recv();
-    for (int i = 0; i < Transaction_table->target2initiator_buffer_size; ++i) {
-        Transaction_table->target2initiator_buffer[i] = serial_read_byte();
+    //uint8_t temp = serial_read_byte();
+    //sync_recv();
+    for (int i = 0; i < trans->target2initiator_buffer_size; ++i) {
+        trans->target2initiator_buffer[i] = serial_read_byte();
         sync_recv();
         //dprintf("serial::data[%08b]\n", Transaction_table->target2initiator_buffer[i]);
-        checksum_computed += Transaction_table->target2initiator_buffer[i];
+        checksum_computed += trans->target2initiator_buffer[i];
     }
     checksum_computed ^= 7;
     uint8_t checksum_received = serial_read_byte();
@@ -259,6 +259,7 @@ int soft_serial_transaction(int sstd_index) {
     serial_delay();
 
     if ((checksum_computed) != (checksum_received)) {
+        uint8_t temp = 0;
         dprintf("serial::FAIL[%u,%u,%u]\n", checksum_computed, checksum_received, temp);
 
         serial_output();
