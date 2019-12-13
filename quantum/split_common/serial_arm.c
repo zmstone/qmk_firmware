@@ -9,6 +9,12 @@
 #include "ch.h"
 #include "hal.h"
 
+static uint8_t state = 0;
+static uint8_t is_serial_master = 0;
+
+#define DEBUG_LINE PAL_LINE(GPIOB, 7)
+#define FLAG_READ() if(true) { state = !state; writePin(DEBUG_LINE, state);}
+
 // default wait implementation cannot be called within interrupt
 // this method seems to be more accurate than GPT timers
 #undef wait_us
@@ -18,16 +24,22 @@
 #define ExtModePort(pin) (((uint32_t)PAL_PORT(pin) & 0x0000FF00U) >> 6)
 
 // Serial pulse period in microseconds. Its probably a bad idea to lower this value.
-#define SERIAL_DELAY 32
+#define SERIAL_DELAY 24
+
+//11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
 
 inline static void serial_delay(void) { wait_us(SERIAL_DELAY); }
-inline static void serial_delay_half(void) { wait_us(SERIAL_DELAY / 4); }
+inline static void serial_delay_half(void) { wait_us(SERIAL_DELAY / 2); }
 inline static void serial_delay_blip(void) { wait_us(1); }
 inline static void serial_output(void) { setPinOutput(SOFT_SERIAL_PIN); }
 inline static void serial_input(void) { setPinInputHigh(SOFT_SERIAL_PIN); }
 inline static bool serial_read_pin(void) { return !!readPin(SOFT_SERIAL_PIN); }
 inline static void serial_low(void) { writePinLow(SOFT_SERIAL_PIN); }
 inline static void serial_high(void) { writePinHigh(SOFT_SERIAL_PIN); }
+
+//22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
+//22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
+//22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
 
 void interrupt_handler(EXTDriver *extp, expchannel_t channel);
 
@@ -40,6 +52,8 @@ void soft_serial_initiator_init(SSTD_t *sstd_table, int sstd_table_size) {
 
     serial_output();
     serial_high();
+    setPinOutput(DEBUG_LINE);
+    is_serial_master = 1;
 }
 
 void soft_serial_target_init(SSTD_t *sstd_table, int sstd_table_size) {
@@ -53,21 +67,24 @@ void soft_serial_target_init(SSTD_t *sstd_table, int sstd_table_size) {
     static EXTChannelConfig ext_clock_channel_config = {EXT_CH_MODE_FALLING_EDGE | EXT_CH_MODE_AUTOSTART | ExtModePort(SOFT_SERIAL_PIN), interrupt_handler};
     extStart(&EXTD1, &extcfg); /* activate config, to be able to select the appropriate channel */
     extSetChannelModeI(&EXTD1, PAL_PAD(SOFT_SERIAL_PIN), &ext_clock_channel_config);
+    setPinOutput(DEBUG_LINE);
 }
 
+//********************************************************************************************
+
 // Used by the master to synchronize timing with the slave.
-static void sync_recv(void) {
+static void __attribute__((noinline)) sync_recv(void) {
     serial_input();
     // This shouldn't hang if the slave disconnects because the
     // serial line will float to high if the slave does disconnect.
     while (!serial_read_pin()) {
     }
 
-    serial_delay_half();
+    serial_delay();
 }
 
 // Used by the slave to send a synchronization signal to the master.
-static void sync_send(void) {
+static void __attribute__((noinline)) sync_send(void) {
     serial_output();
 
     serial_low();
@@ -77,19 +94,21 @@ static void sync_send(void) {
 }
 
 // Reads a byte from the serial line
-static uint8_t serial_read_byte(void) {
+static uint8_t __attribute__((noinline)) serial_read_byte(void) {
     uint8_t byte = 0;
     serial_input();
     for (uint8_t i = 0; i < 8; ++i) {
+        FLAG_READ();
         byte = (byte << 1) | serial_read_pin();
-        wait_us(SERIAL_DELAY);
+        serial_delay();
+        //serial_delay_blip();
     }
 
     return byte;
 }
 
 // Sends a byte with MSB ordering
-static void serial_write_byte(uint8_t data) {
+static void __attribute__((noinline)) serial_write_byte(uint8_t data) {
     uint8_t b = 8;
     serial_output();
     while (b--) {
@@ -109,13 +128,39 @@ void interrupt_handler(EXTDriver *extp, expchannel_t channel) {
 
     sync_send();
 
-    uint8_t checksum = 0;
-    for (int i = 0; i < Transaction_table->target2initiator_buffer_size; ++i) {
-        serial_write_byte(Transaction_table->initiator2target_buffer[i]);
+    serial_delay_half();//read mid pulses
+
+    //uint8_t checksum_computed = 0;
+    serial_read_byte();
+    sync_send();
+    // for (int i = 0; i < Transaction_table->target2initiator_buffer_size; ++i) {
+    //     Transaction_table->target2initiator_buffer[i] = serial_read_byte();
+    //     sync_send();
+    //     checksum_computed += Transaction_table->target2initiator_buffer[i];
+    // }
+    // uint8_t checksum_received = serial_read_byte();
+    //(void)checksum_received;
+        serial_read_byte();
         sync_send();
+        serial_read_byte();
+        sync_send();
+
+    // wait for the sync to finish sending
+    serial_delay();
+
+    uint8_t checksum = 0;
+    serial_write_byte(0b10101010);
+    sync_send();
+serial_delay_half();
+    for (int i = 0; i < Transaction_table->target2initiator_buffer_size; ++i) {
+        serial_write_byte(Transaction_table->target2initiator_buffer[i]);
+        //serial_write_byte(0b10101010);
+        sync_send();
+serial_delay_half();
         checksum += Transaction_table->target2initiator_buffer[i];
     }
     serial_write_byte(checksum ^ 7);
+    //serial_write_byte(0b10101010);
     sync_send();
 
     // wait for the sync to finish sending
@@ -144,6 +189,11 @@ int soft_serial_transaction(void) {
 int soft_serial_transaction(int sstd_index) {
     (void)sstd_index;
 #endif
+
+    // TODO: remove extra delay between transactions
+    serial_delay();
+    serial_delay();
+
     // this code is very time dependent, so we need to disable interrupts
     chSysLock();
 
@@ -160,28 +210,56 @@ int soft_serial_transaction(int sstd_index) {
     // check if the slave is present
     if (serial_read_pin()) {
         // slave failed to pull the line low, assume not present
+        dprintf("serial::slave failed to pull the line low, assume not present\n");
         chSysUnlock();
         return TRANSACTION_NO_RESPONSE;
     }
+    //printf("$");
 
     // if the slave is present syncronize with it
+    //sync_recv();
+
+    //uint8_t checksum = 0;
+    // send data to the slave
+    serial_write_byte(0b10101010);//fake send id
     sync_recv();
+        serial_write_byte(0b10101010);//fake data
+        sync_recv();
+        serial_write_byte(0b10101010);//fake data
+        sync_recv();
+    // for (int i = 0; i < Transaction_table->target2initiator_buffer_size; ++i) {
+    //     serial_write_byte(Transaction_table->target2initiator_buffer[i]);
+    //     sync_recv();
+    //     checksum += Transaction_table->target2initiator_buffer[i];
+    // }
+    // serial_write_byte(checksum);
+    //serial_delay();
+    //wait_us(8);
+    //sync_recv();
+
+    serial_delay();
+    serial_delay();//read mid pulses
+    //serial_delay_half();
 
     uint8_t checksum_computed = 0;
     // receive data from the slave
+    uint8_t temp = serial_read_byte();
+    sync_recv();
     for (int i = 0; i < Transaction_table->target2initiator_buffer_size; ++i) {
-        Transaction_table->initiator2target_buffer[i] = serial_read_byte();
+        Transaction_table->target2initiator_buffer[i] = serial_read_byte();
         sync_recv();
-        // dprintf("serial::data[%08b]\n", serial_slave_buffer[i]);
-        checksum_computed += Transaction_table->initiator2target_buffer[i];
+        //dprintf("serial::data[%08b]\n", Transaction_table->target2initiator_buffer[i]);
+        checksum_computed += Transaction_table->target2initiator_buffer[i];
     }
     checksum_computed ^= 7;
     uint8_t checksum_received = serial_read_byte();
+    (void)checksum_received;
 
     sync_recv();
+    serial_delay();
 
     if ((checksum_computed) != (checksum_received)) {
-        dprintf("serial::FAIL[%u,%u]\n", checksum_computed, checksum_received);
+        dprintf("serial::FAIL[%u,%u,%u]\n", checksum_computed, checksum_received, temp);
 
         serial_output();
         serial_high();
@@ -190,9 +268,11 @@ int soft_serial_transaction(int sstd_index) {
         return TRANSACTION_DATA_ERROR;
     }
 
+    //dprintf("serial::GO[%u,%u,%u]\n", checksum_computed, checksum_received, temp);
+
     // always, release the line when not in use
-    serial_output();
     serial_high();
+    serial_output();
 
     chSysUnlock();
     return TRANSACTION_END;
