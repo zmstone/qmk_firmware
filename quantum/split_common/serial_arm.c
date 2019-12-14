@@ -25,7 +25,7 @@
 
 // Serial pulse period in microseconds. Its probably a bad idea to lower this value.
 #ifndef SERIAL_DELAY
-#    define SERIAL_DELAY 20
+#    define SERIAL_DELAY 16
 #endif
 
 //11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
