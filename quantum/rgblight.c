@@ -620,7 +620,15 @@ void rgblight_set(void) {
 #    else
     start_led = led + clipping_start_pos;
 #    endif
-    ws2812_setleds(start_led, num_leds);
+
+    //TODO: bodge out rgb on slave side
+#ifndef RGBLIGHT_SPLIT
+    bool is_keyboard_master(void);
+    if(!is_keyboard_master())
+        return;
+#endif
+
+    ws2812_setleds(start_led, num_leds); 
 }
 #endif
 
