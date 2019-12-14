@@ -9,11 +9,11 @@
 #include "ch.h"
 #include "hal.h"
 
-static uint8_t state = 0;
-static uint8_t is_serial_master = 0;
+//static uint8_t state = 0;
+//static uint8_t is_serial_master = 0;
 
-#define DEBUG_LINE PAL_LINE(GPIOB, 7)
-#define FLAG_READ() if(true) { state = !state; writePin(DEBUG_LINE, state);}
+//#define DEBUG_LINE PAL_LINE(GPIOB, 7)
+//#define FLAG_READ() if(true) { state = !state; writePin(DEBUG_LINE, state);}
 
 // default wait implementation cannot be called within interrupt
 // this method seems to be more accurate than GPT timers
@@ -24,7 +24,9 @@ static uint8_t is_serial_master = 0;
 #define ExtModePort(pin) (((uint32_t)PAL_PORT(pin) & 0x0000FF00U) >> 6)
 
 // Serial pulse period in microseconds. Its probably a bad idea to lower this value.
-#define SERIAL_DELAY 20
+#ifndef SERIAL_DELAY
+#    define SERIAL_DELAY 16
+#endif
 
 //11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
 
@@ -52,8 +54,8 @@ void soft_serial_initiator_init(SSTD_t *sstd_table, int sstd_table_size) {
 
     serial_output();
     serial_high();
-    setPinOutput(DEBUG_LINE);
-    is_serial_master = 1;
+    //setPinOutput(DEBUG_LINE);
+    //is_serial_master = 1;
 }
 
 void soft_serial_target_init(SSTD_t *sstd_table, int sstd_table_size) {
@@ -67,7 +69,7 @@ void soft_serial_target_init(SSTD_t *sstd_table, int sstd_table_size) {
     static EXTChannelConfig ext_clock_channel_config = {EXT_CH_MODE_FALLING_EDGE | EXT_CH_MODE_AUTOSTART | ExtModePort(SOFT_SERIAL_PIN), interrupt_handler};
     extStart(&EXTD1, &extcfg); /* activate config, to be able to select the appropriate channel */
     extSetChannelModeI(&EXTD1, PAL_PAD(SOFT_SERIAL_PIN), &ext_clock_channel_config);
-    setPinOutput(DEBUG_LINE);
+    //setPinOutput(DEBUG_LINE);
 }
 
 //********************************************************************************************
@@ -98,7 +100,8 @@ static uint8_t __attribute__((noinline)) serial_read_byte(void) {
     uint8_t byte = 0;
     serial_input();
     for (uint8_t i = 0; i < 8; ++i) {
-        FLAG_READ();
+        //FLAG_READ();
+        //serial_delay_blip();
         byte = (byte << 1) | serial_read_pin();
         serial_delay();
         //serial_delay_blip();
@@ -142,6 +145,7 @@ void interrupt_handler(EXTDriver *extp, expchannel_t channel) {
         sync_send();
         checksum_computed += trans->initiator2target_buffer[i];
     }
+    checksum_computed ^= 7;
     uint8_t checksum_received = serial_read_byte();
     sync_send();
     (void)checksum_received;
@@ -178,7 +182,7 @@ serial_delay_half();
 
     // TODO: remove extra delay between transactions
     serial_delay();
-    serial_delay();
+    //serial_delay();
 
     extChannelEnableI(&EXTD1, PAL_PAD(SOFT_SERIAL_PIN));
     chSysUnlockFromISR();
@@ -206,7 +210,7 @@ int soft_serial_transaction(int sstd_index) {
 
     // TODO: remove extra delay between transactions
     serial_delay();
-    serial_delay();
+    //serial_delay();
 
     // this code is very time dependent, so we need to disable interrupts
     chSysLock();
@@ -224,7 +228,7 @@ int soft_serial_transaction(int sstd_index) {
     // check if the slave is present
     if (serial_read_pin()) {
         // slave failed to pull the line low, assume not present
-        dprintf("serial::slave failed to pull the line low, assume not present\n");
+        dprintf("serial::NO_RESPONSE\n");
         chSysUnlock();
         return TRANSACTION_NO_RESPONSE;
     }
@@ -242,7 +246,7 @@ int soft_serial_transaction(int sstd_index) {
         sync_recv();
         checksum += trans->initiator2target_buffer[i];
     }
-    serial_write_byte(checksum);
+    serial_write_byte(checksum^7);
     sync_recv();
 
     serial_delay();serial_delay();//read mid pulses
@@ -265,12 +269,12 @@ int soft_serial_transaction(int sstd_index) {
 
     if ((checksum_computed) != (checksum_received)) {
         dprintf("serial::FAIL[%u,%u,%u]\n", checksum_computed, checksum_received, sstd_index);
-        if(sstd_index == 1)
-        {
-            for (int i = 0; i < trans->target2initiator_buffer_size; ++i) {
-                dprintf("serial::data[%08b]\n", trans->target2initiator_buffer[0]);
-            }
-        }
+        //if(sstd_index == 1)
+        // {
+        //     for (int i = 0; i < trans->target2initiator_buffer_size; ++i) {
+        //         dprintf("serial::data[%08b]\n", trans->target2initiator_buffer[0]);
+        //     }
+        // }
         serial_output();
         serial_high();
 
