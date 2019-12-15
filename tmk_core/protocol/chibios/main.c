@@ -180,7 +180,7 @@ int main(void) {
 
     /* Main loop */
     while (true) {
-#if !defined(NO_USB_STARTUP_CHECK) && !defined(SPLIT_KEYBOARD)
+#if !defined(NO_USB_STARTUP_CHECK)
         if (USB_DRIVER.state == USB_SUSPENDED) {
             print("[s]");
 #    ifdef VISUALIZER_ENABLE
