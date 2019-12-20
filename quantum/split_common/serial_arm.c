@@ -23,9 +23,32 @@
 // helper to convert GPIOB to EXT_MODE_GPIOB
 #define ExtModePort(pin) (((uint32_t)PAL_PORT(pin) & 0x0000FF00U) >> 6)
 
-// Serial pulse period in microseconds. Its probably a bad idea to lower this value.
-#ifndef SERIAL_DELAY
+#ifndef SELECT_SOFT_SERIAL_SPEED
+#    define SELECT_SOFT_SERIAL_SPEED 1
+// TODO: correct speeds...
+//  0: about 189kbps (Experimental only)
+//  1: about 137kbps (default)
+//  2: about 75kbps
+//  3: about 39kbps
+//  4: about 26kbps
+//  5: about 20kbps
+#endif
+
+// Serial pulse period in microseconds. At the moment, going lower than 12 causes communication failure
+#if SELECT_SOFT_SERIAL_SPEED == 0
+#    define SERIAL_DELAY 12
+#elif SELECT_SOFT_SERIAL_SPEED == 1
 #    define SERIAL_DELAY 16
+#elif SELECT_SOFT_SERIAL_SPEED == 2
+#    define SERIAL_DELAY 24
+#elif SELECT_SOFT_SERIAL_SPEED == 3
+#    define SERIAL_DELAY 32
+#elif SELECT_SOFT_SERIAL_SPEED == 4
+#    define SERIAL_DELAY 48
+#elif SELECT_SOFT_SERIAL_SPEED == 5
+#    define SERIAL_DELAY 64
+#else
+#    error invalid SELECT_SOFT_SERIAL_SPEED value
 #endif
 
 //11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
