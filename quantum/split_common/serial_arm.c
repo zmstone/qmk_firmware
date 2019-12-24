@@ -9,6 +9,16 @@
 #include "ch.h"
 #include "hal.h"
 
+
+// TODO: resolve/remove build warnings
+#if defined(RGBLIGHT_ENABLE) && defined(RGBLED_SPLIT) && defined(CONVERT_TO_PROTON_C)
+#warning "RGBLED_SPLIT not supported with CTPC and is in"
+#endif
+
+#ifdef ENCODER_ENABLE
+#pragma message "ENCODER_ENABLE is currently untested"
+#endif
+
 //static uint8_t state = 0;
 //static uint8_t is_serial_master = 0;
 
