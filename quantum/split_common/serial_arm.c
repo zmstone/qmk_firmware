@@ -34,7 +34,7 @@
 #define ExtModePort(pin) (((uint32_t)PAL_PORT(pin) & 0x0000FF00U) >> 6)
 
 #ifndef SELECT_SOFT_SERIAL_SPEED
-#    define SELECT_SOFT_SERIAL_SPEED 1
+#    define SELECT_SOFT_SERIAL_SPEED 0
 // TODO: correct speeds...
 //  0: about 189kbps (Experimental only)
 //  1: about 137kbps (default)
@@ -242,7 +242,7 @@ int soft_serial_transaction(int sstd_index) {
     SSTD_t *trans = &Transaction_table[sstd_index];
 
     // TODO: remove extra delay between transactions
-    serial_delay();
+    //serial_delay();
     //serial_delay();
 
     // this code is very time dependent, so we need to disable interrupts
