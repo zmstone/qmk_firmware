@@ -41,6 +41,7 @@ typedef union {
 } backlight_config_t;
 
 void    backlight_init(void);
+void    backlight_task(void);
 void    backlight_increase(void);
 void    backlight_decrease(void);
 void    backlight_toggle(void);
